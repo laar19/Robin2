@@ -2,6 +2,8 @@ package com.example.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -77,6 +79,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val totalSecondsProcessed = MutableStateFlow(0L)
     val totalCloudCost = MutableStateFlow(0.0)
 
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        if (connectivityManager != null) {
+            val capabilities = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
+            if (capabilities != null) {
+                if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) return true
+                if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return true
+                if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) return true
+            }
+        }
+        return false
+    }
+
     fun checkModelStatuses() {
         val app = getApplication<Application>()
         isVoskDownloaded.value = ModelDownloadManager.isModelDownloaded(app, ModelDownloadManager.VOSK)
@@ -86,6 +101,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun downloadModel(modelId: String) {
         val app = getApplication<Application>()
+        if (!isNetworkAvailable()) {
+            _statusLabel.value = if (uiLanguage.value == "en") "No Connection" else "Sin Conexión"
+            speechManager.setError(
+                if (uiLanguage.value == "en") 
+                    "No internet connection available to download speech models. Check your network." 
+                else 
+                    "Sin conexión a internet disponible para descargar los modelos de voz. Confirma tu red."
+            )
+            return
+        }
         _statusLabel.value = "Descargando..."
         ModelDownloadManager.downloadModel(app, modelId) { success ->
             checkModelStatuses()
@@ -169,24 +194,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setWhisperApiKey(key: String) {
-        whisperApiKey.value = key
+        val trimmed = key.trim()
+        whisperApiKey.value = trimmed
         val app = getApplication<Application>()
         app.getSharedPreferences("robin_settings", Context.MODE_PRIVATE)
-            .edit().putString("whisper_api_key", key).apply()
+            .edit().putString("whisper_api_key", trimmed).apply()
     }
 
     fun setWhisperApiEndpoint(endpoint: String) {
-        whisperApiEndpoint.value = endpoint
+        val trimmed = endpoint.trim()
+        whisperApiEndpoint.value = trimmed
         val app = getApplication<Application>()
         app.getSharedPreferences("robin_settings", Context.MODE_PRIVATE)
-            .edit().putString("whisper_api_endpoint", endpoint).apply()
+            .edit().putString("whisper_api_endpoint", trimmed).apply()
     }
 
     fun setTtsModelName(modelName: String) {
-        ttsModelName.value = modelName
+        val trimmed = modelName.trim()
+        ttsModelName.value = trimmed
         val app = getApplication<Application>()
         app.getSharedPreferences("robin_settings", Context.MODE_PRIVATE)
-            .edit().putString("tts_model_name", modelName).apply()
+            .edit().putString("tts_model_name", trimmed).apply()
     }
 
     fun toggleDarkMode() {
@@ -286,6 +314,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         delay(1200)
                         saveTranscription("Reconocimiento Whisper API (Simulado): $fallbackText", "Whisper API (Simulada)")
                         _statusLabel.value = "Listo (Sim)"
+                    } else if (!isNetworkAvailable()) {
+                        pushedToLog("Whisper API fallido por falta de conexión de red. Aplicando fallback offline...")
+                        saveTranscription("$fallbackText (Fallback - Sin Red)", "Whisper API (Offline Fallback)")
+                        _statusLabel.value = "Listo"
+                        speechManager.setError(
+                            if (uiLanguage.value == "en") 
+                                "No Internet connection. Activated offline fallback." 
+                            else 
+                                "Sin conexión a Internet. Activada transcripción local de respaldo."
+                        )
                     } else {
                         pushedToLog("Enviando petición a endpoint Whisper customizado: ${whisperApiEndpoint.value}")
                         _statusLabel.value = "Llamando Whisper API..."
@@ -341,21 +379,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } else if (engine == "gemini_cloud") {
                     val fallbackText = liveTranscript.value.ifBlank { "Hola Robin, procesando audio con Gemini Cloud STT." }
-                    _statusLabel.value = "Enviando a Gemini Cloud..."
-                    
-                    val result = GeminiClient.processTextWithGemini(
-                        prompt = "Traduce, transcribe o procesa esta voz que dice: '$fallbackText'. " +
-                                "Retorna solamente la transcripción limpia sin comentarios adicionales ni comillas."
-                    )
-                    
-                    result.onSuccess { transcribed ->
-                        saveTranscription(transcribed, "Gemini Speech Cloud")
+                    if (!isNetworkAvailable()) {
+                        pushedToLog("Gemini Cloud fallido por falta de conexión de red. Aplicando fallback offline...")
+                        saveTranscription(fallbackText, "Vosk (Offline - Sin Red)")
                         _statusLabel.value = "Listo"
-                    }.onFailure { exception ->
-                        // Fallback automatically to native translation/speech recognition so the user always has a result!
-                        Log.e(TAG, "Gemini processing failed, doing fallback", exception)
-                        saveTranscription(fallbackText, "Vosk (Offline)")
-                        _statusLabel.value = "Listo - Fallback"
+                        speechManager.setError(
+                            if (uiLanguage.value == "en") 
+                                "No Internet connection. Activated offline fallback." 
+                            else 
+                                "Sin conexión a Internet. Activada transcripción local de respaldo."
+                        )
+                    } else {
+                        _statusLabel.value = "Enviando a Gemini Cloud..."
+                        
+                        val result = GeminiClient.processTextWithGemini(
+                            prompt = "Traduce, transcribe o procesa esta voz que dice: '$fallbackText'. " +
+                                    "Retorna solamente la transcripción limpia sin comentarios adicionales ni comillas."
+                        )
+                        
+                        result.onSuccess { transcribed ->
+                            saveTranscription(transcribed, "Gemini Speech Cloud")
+                            _statusLabel.value = "Listo"
+                        }.onFailure { exception ->
+                            // Fallback automatically to native translation/speech recognition so the user always has a result!
+                            Log.e(TAG, "Gemini processing failed, doing fallback", exception)
+                            saveTranscription(fallbackText, "Vosk (Offline)")
+                            _statusLabel.value = "Listo - Fallback"
+                        }
                     }
                 } else if (engine == "whisper_cpp") {
                     if (!isWhisperDownloaded.value) {
@@ -397,24 +447,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun speakText(text: String) {
         if (text.isBlank()) return
         val currentModel = ttsModelName.value
-        _statusLabel.value = "Hablando..."
+        _statusLabel.value = if (uiLanguage.value == "en") "Speaking..." else "Hablando..."
         pushedToLog("Síntesis iniciada usando modelo TTS: $currentModel")
 
         if (chosenTtsEngine.value == "android") {
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "robin_tts")
-            _statusLabel.value = "Listo"
+            val systemTts = tts
+            if (systemTts == null || !_ttsInitialized.value) {
+                _statusLabel.value = "TTS no listo"
+                speechManager.setError(
+                    if (uiLanguage.value == "en") 
+                        "Native TTS engine is not fully initialized. Please try again." 
+                    else 
+                        "El motor TTS nativo no se ha inicializado todavía. Inténtalo de nuevo."
+                )
+                return
+            }
+
+            // Dynamically evaluate and select correct locale
+            val locale = when (currentLanguage.value) {
+                "en" -> Locale.US
+                "pt" -> Locale("pt", "BR")
+                else -> Locale("es", "ES")
+            }
+
+            try {
+                systemTts.language = locale
+                systemTts.setSpeechRate(_currentTtsSpeechRate.value)
+                systemTts.setPitch(_currentTtsPitch.value)
+                systemTts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "robin_tts")
+                _statusLabel.value = "Listo"
+            } catch (e: Exception) {
+                Log.e(TAG, "Native TTS failed", e)
+                _statusLabel.value = "Error TTS"
+                speechManager.setError(e.localizedMessage ?: "Error al reproducir audio")
+            }
         } else {
             // Piper TTS
             if (!isPiperDownloaded.value) {
                 _statusLabel.value = "Falta Piper"
-                speechManager.setError("El modelo local de Piper TTS no está descargado. Descárgalo en Configuraciones.")
+                speechManager.setError(
+                    if (uiLanguage.value == "en")
+                        "The local Piper model is not downloaded. Please download it in Settings."
+                    else
+                        "El modelo local de Piper TTS no está descargado. Descárgalo en Configuraciones."
+                )
                 return
             }
             // Mocking Piper engine with custom ONNX parameters
             viewModelScope.launch {
                 _statusLabel.value = "Piper ONNX ($currentModel): Generando..."
                 delay(1000)
-                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "piper_tts")
+                
+                val systemTts = tts
+                if (systemTts != null && _ttsInitialized.value) {
+                    val locale = when (currentLanguage.value) {
+                        "en" -> Locale.US
+                        "pt" -> Locale("pt", "BR")
+                        else -> Locale("es", "ES")
+                    }
+                    systemTts.language = locale
+                    systemTts.setSpeechRate(_currentTtsSpeechRate.value)
+                    systemTts.setPitch(_currentTtsPitch.value)
+                    systemTts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "piper_tts")
+                }
                 _statusLabel.value = "Listo"
             }
         }
@@ -423,14 +518,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Handles processing files imported from external files
     fun processImportedFile(inputStream: InputStream, filename: String) {
         viewModelScope.launch {
-            _statusLabel.value = "Procesando archivo..."
+            _statusLabel.value = if (uiLanguage.value == "en") "Processing file..." else "Procesando archivo..."
             _progressBar.value = 0.1f
             delay(500)
             _progressBar.value = 0.5f
             
-            // Try reading the stream
+            // Try reading the stream safely up to 10k characters to prevent OOM heap exhaustion
             val content = try {
-                inputStream.bufferedReader().use { it.readText() }
+                val buffer = CharArray(10000)
+                val readChars = inputStream.bufferedReader().use { reader ->
+                    reader.read(buffer, 0, 10000)
+                }
+                if (readChars > 0) {
+                    String(buffer, 0, readChars)
+                } else {
+                    if (uiLanguage.value == "en") "Empty or unreadable file content" else "Contenido de archivo vacío o ilegible"
+                }
             } catch (e: Exception) {
                 "Contenido de audio simulado para: $filename"
             }
@@ -442,7 +545,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             
             val cleanResult = if (content.length > 500) content.substring(0, 500) + "..." else content
             saveTranscription(
-                text = "Archivo transcribido [$filename]: $cleanResult",
+                text = if (uiLanguage.value == "en") "Transcribed file [$filename]: $cleanResult" else "Archivo transcribido [$filename]: $cleanResult",
                 engineStr = if (chosenEngine.value == "android_stt") "SpeechRecognizer (Archivo)" else "Vosk (Archivo)"
             )
             _statusLabel.value = "Listo"

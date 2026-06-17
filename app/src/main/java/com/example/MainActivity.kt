@@ -7,6 +7,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -294,7 +297,22 @@ fun SpeechToTextTab(
 ) {
     val currentEngine by viewModel.chosenEngine.collectAsStateWithLifecycle()
     val currentLanguage by viewModel.currentLanguage.collectAsStateWithLifecycle()
+    val uiLanguage by viewModel.uiLanguage.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            viewModel.startRecording()
+        } else {
+            Toast.makeText(
+                context, 
+                if (uiLanguage == "en") "Microphone permission is required to process voice." else "Se requiere permiso de micrófono para procesar voz.", 
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 
     val isVoskDownloaded by viewModel.isVoskDownloaded.collectAsStateWithLifecycle()
     val isWhisperDownloaded by viewModel.isWhisperDownloaded.collectAsStateWithLifecycle()
@@ -529,7 +547,15 @@ fun SpeechToTextTab(
                             if (isListening) {
                                 viewModel.stopRecording()
                             } else {
-                                viewModel.startRecording()
+                                val hasPermission = ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.RECORD_AUDIO
+                                ) == PackageManager.PERMISSION_GRANTED
+                                if (hasPermission) {
+                                    viewModel.startRecording()
+                                } else {
+                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
                             }
                         }
                         .background(

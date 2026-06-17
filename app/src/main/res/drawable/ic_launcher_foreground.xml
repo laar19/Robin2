@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:translateX="14"
+        android:translateY="20">
+        
+        <!-- Bird Body - Low Poly Geometric Bird -->
+        <!-- Tail -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M11,54 L20,38 L17,35 L6,52 Z" />
+        
+        <!-- Wing (Orange) -->
+        <path
+            android:fillColor="#F05A28"
+            android:pathData="M31,34 L11,54 L36,44 Z" />
+            
+        <!-- Lower Breast (White) -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M36,44 L20,58 L32,58 L46,45 Z" />
+            
+        <!-- Upper Breast (Orange/Red) -->
+        <path
+            android:fillColor="#D9381E"
+            android:pathData="M36,44 L31,34 L48,27 L49,38 L44,45 Z" />
+            
+        <!-- Back & Head (White Triangles) -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M31,34 L25,31 L36,25 Z" />
+        <path
+            android:fillColor="#EEEEEE"
+            android:pathData="M36,25 L45,18 L48,27 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M45,18 L48,27 L51,21 Z" />
+            
+        <!-- Beak (Orange) -->
+        <path
+            android:fillColor="#D9381E"
+            android:pathData="M51,21 L55,23 L51,25 Z" />
+            
+        <!-- Branch (Green Geometric) -->
+        <path
+            android:fillColor="#0D5C3A"
+            android:pathData="M23,61 L31,61 L37,58 L28,58 Z" />
+        <path
+            android:fillColor="#158A59"
+            android:pathData="M34,61 L42,61 L48,55 L39,55 Z" />
+        <path
+            android:fillColor="#0D5C3A"
+            android:pathData="M42,61 L54,61 L61,53 L48,55 Z" />
+            
+        <!-- Sound Waves (Representing Voice STT/TTS) -->
+        <path
+            android:fillColor="#D9381E"
+            android:pathData="M59,21 Q61,26 59,31 L61,31 Q63,26 61,21 Z" />
+        <path
+            android:fillColor="#D9381E"
+            android:pathData="M63,17 Q66,26 63,35 L65,35 Q68,26 65,17 Z" />
+        <path
+            android:fillColor="#D9381E"
+            android:pathData="M67,13 Q71,26 67,39 L69,39 Q73,26 69,13 Z" />
+            
+    </group>
+</vector>

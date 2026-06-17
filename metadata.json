@@ -1,0 +1,6 @@
+{
+  "name": "Robin",
+  "description": "Speech-to-Text and Text-to-Speech offline, processing all audio 100% locally with high-fidelity native engines.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

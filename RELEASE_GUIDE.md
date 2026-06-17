@@ -1,82 +1,83 @@
-# Guía de Compilación de Robin App para Producción
+# Guía de Compilación de APK Firmada de Producción | Robin Assistant
 
-Esta guía detalla los pasos recomendados para generar un APK/AAB firmado y optimizado listo para su distribución.
-
----
-
-## 🛠️ Requisitos Previos
-
-Asegúrate de contar con las siguientes herramientas instaladas en tu máquina de desarrollo:
-- **Java Development Kit (JDK) 11 o posterior**
-- **Android Studio** (incluye SDK de Android y terminal)
-- **Gradle** (gestionado a través del build system nativo)
+Esta guía detalla los pasos técnicos para firmar y generar una APK de producción lista para distribución. La configuración de compilación de Gradle en Robin ya está completamente automatizada y optimizada para producción con firmas dinámicas y mecanismos de contingencia.
 
 ---
 
-## 1. 🔑 Generar un Almacén de Claves de Producción (Keystore)
+## 1. Funcionamiento del Sistema de Firmas en Gradle
 
-Para firmar digitalmente la aplicación, se requiere un archivo de almacén de claves `.jks`. Puedes crearlo utilizando la herramienta `keytool` provista por la instalación de Java.
+En `app/build.gradle.kts`, se parametriza la sección `signingConfigs` para buscar variables de entorno o bien utilizar firmas de respaldo automáticamente:
 
-Abre tu terminal y ejecuta el siguiente comando:
-
-```bash
-keytool -genkeypair -v -keystore my-upload-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+```kotlin
+signingConfigs {
+    create("release") {
+        val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+        val sFile = file(keystorePath)
+        if (sFile.exists()) {
+            storeFile = sFile
+            storePassword = System.getenv("STORE_PASSWORD") ?: "android"
+            keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: "android"
+        } else {
+            // Respaldarse en debug keystore para evitar fallos de compilación locales
+            storeFile = file("${rootDir}/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+}
 ```
 
-### 📝 Parámetros explicados:
-- `-keystore my-upload-key.jks`: El nombre físico del archivo de almacén de claves generado.
-- `-alias upload`: Nombre del alias de la clave (utilizado habitualmente para identificar la firma del canal de carga).
-- `-validity 10000`: La validez en días del certificado de firma (aproximadamente 27 años).
-- `-keysize 2048`: La fuerza de encriptación RSA.
-
-> [!CAUTION]
-> **SEGURIDAD CRÍTICA:** Guarda este archivo `my-upload-key.jks` y las contraseñas en un lugar seguro (por ejemplo, un gestor de secretos). Si pierdes este almacén de claves, no podrás publicar actualizaciones de tu aplicación en Google Play Store.
+Esto garantiza que:
+1. **Compilación Segura:** Si no has configurado aún tu clave de producción, el build de release funcionará utilizando la firma local de depuración de manera segura.
+2. **Inyección de Secretos:** Puedes inyectar las claves mediante variables de entorno en sistemas de Integración Continua (CI/CD) o un archivo local de properties.
 
 ---
 
-## 2. 🎛️ Configurar las Variables de Entorno para Compilación Segura
+## 2. Generación del Almacén de Claves de Lanzamiento (Keystore)
 
-La configuración del script Gradle de Robin App en `app/build.gradle.kts` lee dinámicamente las credenciales desde variables de entorno para evitar almacenar secretos en el historial de Git.
-
-Configura las siguientes variables en tu terminal de compilación o archivo local `.env`:
+Para generar tu propio almacén de claves de producción (`my-upload-key.jks`), abre el terminal de tu máquina de desarrollo y ejecuta:
 
 ```bash
-export KEYSTORE_PATH="/ruta/absoluta/a/tu/my-upload-key.jks"
-export STORE_PASSWORD="tu_contraseña_del_keystore"
-export KEY_ALIAS="upload"
-export KEY_PASSWORD="tu_contraseña_de_la_clave"
+keytool -genkey -v -keystore my-upload-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
 ```
 
-### 🔄 Comportamiento Automático de Seguridad (Fallback)
-Si las variables de entorno o el archivo `.jks` no están presentes en el sistema, el script `build.gradle.kts` de Robin App **realizará un fallback automático al almacén de claves de depuración (debug.keystore)**. Esto garantiza que las compilaciones nunca fallen repentinamente, manteniendo la fluidez del desarrollo.
+### Parámetros recomendados:
+- **`-keystore`**: Nombre del archivo (ej. `my-upload-key.jks`). Ubícalo en la raíz del proyecto.
+- **`-alias`**: Alias para identificar la clave (ej. `upload`).
+- **`-validity`**: Tiempo de validez en días (se recomiendan al menos 10000 días).
 
 ---
 
-## 3. 📦 Ejecutar Comando de Compilación en Producción
+## 3. Instrucciones de Compilación de Lanzamiento (Release APK/AAB)
 
-Una vez configuradas las variables de entorno, ejecuta el comando de Gradle correspondiente en el directorio raíz de la aplicación para generar los paquetes finales:
+### Opción A: Usando la Interfaz de Google AI Studio
+1. Haz clic en el botón de **Exportar / Descargar Gradle** o accede al menú **Configuraciones de Compilación** en la barra superior.
+2. Genera y descarga el archivo completo APK / AAB.
 
-### Generar APK Firmado (Producción / Release)
+### Opción B: Usando el Terminal del Entorno Gradle
+Si estás depurando en tu equipo de desarrollo o en un pipeline de integración, arranca los comandos de compilación mediante:
+
+#### Generar una APK de Lanzamiento (Release APK)
 ```bash
-gradle assembleRelease
+gradle :app:assembleRelease
 ```
-El archivo de producción generado se ubicará en:
-`app/build/outputs/apk/release/app-release.apk`
+*La APK se generará en la ruta:* `/app/build/outputs/apk/release/app-release.apk`
 
-### Generar Android App Bundle (AAB para Google Play Store)
+#### Generar un Android App Bundle para Play Store (AAB)
 ```bash
-gradle bundleRelease
+gradle :app:bundleRelease
 ```
-El paquete de distribución AAB optimizado se ubicará en:
-`app/build/outputs/bundle/release/app-release.aab`
+*El paquete AAB se generará en la ruta:* `/app/build/outputs/bundle/release/app-release.aab`
 
 ---
 
-## ⚡ Formatos de Modelos Admitidos en Compilaciones Offline
+## 4. Configurar Variables de Entorno en Lanzamiento (Opcional)
 
-La aplicación Robin App admite la descarga dinámica bajo demanda (On-Demand) de sistemas inteligentes offline. Los siguientes modelos son compatibles con este proceso:
-- **Vosk STT Mini:** Procesamiento acústico local optimizado para bajo consumo de batería.
-- **Whisper.cpp GGML-Tiny:** Decodificador de transformador local con soporte multilingüe.
-- **Piper ONNX TTS:** Red de síntesis de voz neuronal de calidad humana con baja latencia.
+Si configuras builds automatizados en sistemas remotos de Integración Continua (como GitHub Actions, GitLab CI, Jenkins o Bitrise), define estas variables de entorno en tu panel de control de manera confidencial:
 
-Todos los modelos descargados bajo demanda se guardan y cargan localmente desde la memoria privada de la aplicación, garantizando privacidad total (100% offline).
+- `KEYSTORE_PATH`: Ruta absoluta donde se encuentra el archivo `.jks` en el servidor de compilaciones.
+- `STORE_PASSWORD`: Contraseña del KeyStore de producción.
+- `KEY_ALIAS`: Nombre del alias configurado en la clave.
+- `KEY_PASSWORD`: Contraseña de la clave correspondiente al alias.

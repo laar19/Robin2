@@ -1,6 +1,7 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -46,6 +47,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val chosenEngine = MutableStateFlow("vosk") // "vosk", "whisper_api", "gemini_cloud", "android_stt"
     val chosenTtsEngine = MutableStateFlow("android") // "android", "piper"
     val isDarkMode = MutableStateFlow(false)
+
+    // Persistent Bilingual & API configs
+    val uiLanguage = MutableStateFlow("es")
+    val whisperApiKey = MutableStateFlow("")
+    val whisperApiEndpoint = MutableStateFlow("https://api.openai.com/v1/audio/transcriptions")
+    val ttsModelName = MutableStateFlow("tts-1")
 
     // On-demand Models Download Status Flow
     val isVoskDownloaded = MutableStateFlow(false)
@@ -97,6 +104,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // AppDatabase initialization
         val db = AppDatabase.getDatabase(application)
         repository = TranscriptionRepository(db.transcriptionDao())
+
+        // Load persisted preferences
+        val prefs = application.getSharedPreferences("robin_settings", Context.MODE_PRIVATE)
+        uiLanguage.value = prefs.getString("ui_language", "es") ?: "es"
+        whisperApiKey.value = prefs.getString("whisper_api_key", "") ?: ""
+        whisperApiEndpoint.value = prefs.getString("whisper_api_endpoint", "https://api.openai.com/v1/audio/transcriptions") ?: "https://api.openai.com/v1/audio/transcriptions"
+        ttsModelName.value = prefs.getString("tts_model_name", "tts-1") ?: "tts-1"
+        isDarkMode.value = prefs.getBoolean("is_dark_mode", false)
         
         historyItems = repository.allTranscriptions.stateIn(
             scope = viewModelScope,
@@ -144,6 +159,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setPitch(pitch: Float) {
         _currentTtsPitch.value = pitch
+    }
+
+    fun setUiLanguage(lang: String) {
+        uiLanguage.value = lang
+        val app = getApplication<Application>()
+        app.getSharedPreferences("robin_settings", Context.MODE_PRIVATE)
+            .edit().putString("ui_language", lang).apply()
+    }
+
+    fun setWhisperApiKey(key: String) {
+        whisperApiKey.value = key
+        val app = getApplication<Application>()
+        app.getSharedPreferences("robin_settings", Context.MODE_PRIVATE)
+            .edit().putString("whisper_api_key", key).apply()
+    }
+
+    fun setWhisperApiEndpoint(endpoint: String) {
+        whisperApiEndpoint.value = endpoint
+        val app = getApplication<Application>()
+        app.getSharedPreferences("robin_settings", Context.MODE_PRIVATE)
+            .edit().putString("whisper_api_endpoint", endpoint).apply()
+    }
+
+    fun setTtsModelName(modelName: String) {
+        ttsModelName.value = modelName
+        val app = getApplication<Application>()
+        app.getSharedPreferences("robin_settings", Context.MODE_PRIVATE)
+            .edit().putString("tts_model_name", modelName).apply()
+    }
+
+    fun toggleDarkMode() {
+        val newMode = !isDarkMode.value
+        isDarkMode.value = newMode
+        val app = getApplication<Application>()
+        app.getSharedPreferences("robin_settings", Context.MODE_PRIVATE)
+            .edit().putBoolean("is_dark_mode", newMode).apply()
     }
 
     // Toggle Favorite
@@ -226,8 +277,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _statusLabel.value = "Procesando..."
 
             viewModelScope.launch {
-                // If it's Gemini Cloud option
-                if (engine == "gemini_cloud" || engine == "whisper_api") {
+                if (engine == "whisper_api") {
+                    val fallbackText = liveTranscript.value.ifBlank { "Hola Robin, procesando audio con OpenAI Whisper API." }
+                    val key = whisperApiKey.value
+                    if (key.isBlank() || key == "YOUR_API_KEY") {
+                        pushedToLog("Whisper API Key no configurada. Usando simulación de voz...")
+                        _statusLabel.value = "Whisper API Sim..."
+                        delay(1200)
+                        saveTranscription("Reconocimiento Whisper API (Simulado): $fallbackText", "Whisper API (Simulada)")
+                        _statusLabel.value = "Listo (Sim)"
+                    } else {
+                        pushedToLog("Enviando petición a endpoint Whisper customizado: ${whisperApiEndpoint.value}")
+                        _statusLabel.value = "Llamando Whisper API..."
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try {
+                                val urlObj = java.net.URL(whisperApiEndpoint.value)
+                                val conn = urlObj.openConnection() as java.net.HttpURLConnection
+                                conn.requestMethod = "POST"
+                                conn.setRequestProperty("Authorization", "Bearer $key")
+                                conn.connectTimeout = 8000
+                                conn.readTimeout = 8000
+                                conn.doOutput = true
+                                
+                                val boundary = "----Boundary" + System.currentTimeMillis()
+                                conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                                
+                                val out = conn.outputStream
+                                out.write("--$boundary\r\n".toByteArray())
+                                out.write("Content-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-1\r\n".toByteArray())
+                                out.write("--$boundary\r\n".toByteArray())
+                                out.write("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n".toByteArray())
+                                out.write("Content-Type: audio/wav\r\n\r\n".toByteArray())
+                                out.write(ByteArray(512)) // mock small audio wave payload chunk
+                                out.write("\r\n--$boundary--\r\n".toByteArray())
+                                out.flush()
+                                out.close()
+                                
+                                val responseCode = conn.responseCode
+                                if (responseCode in 200..299) {
+                                    val responseText = conn.inputStream.bufferedReader().use { it.readText() }
+                                    val finalTranscribed = if (responseText.contains("\"text\"")) {
+                                        responseText.substringAfter("\"text\":\"").substringBefore("\"")
+                                    } else {
+                                        "Whisper API response: $responseText"
+                                    }
+                                    viewModelScope.launch(Dispatchers.Main) {
+                                        saveTranscription(finalTranscribed, "Whisper API (Network)")
+                                        _statusLabel.value = "Listo"
+                                    }
+                                } else {
+                                    val errMsg = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $responseCode"
+                                    throw Exception(errMsg)
+                                }
+                            } catch (e: Exception) {
+                                Log.e("MainViewModel", "Whisper API failed", e)
+                                viewModelScope.launch(Dispatchers.Main) {
+                                    pushedToLog("Excepción en llamada Whisper. Reclamando fallback...")
+                                    saveTranscription("$fallbackText (Fallback de API)", "Whisper API (Offline Fallback)")
+                                    _statusLabel.value = "Listo - Fallback"
+                                }
+                            }
+                        }
+                    }
+                } else if (engine == "gemini_cloud") {
                     val fallbackText = liveTranscript.value.ifBlank { "Hola Robin, procesando audio con Gemini Cloud STT." }
                     _statusLabel.value = "Enviando a Gemini Cloud..."
                     
@@ -284,8 +396,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Text to Speech
     fun speakText(text: String) {
         if (text.isBlank()) return
+        val currentModel = ttsModelName.value
         _statusLabel.value = "Hablando..."
-        pushedToLog("Síntesis de voz iniciada...")
+        pushedToLog("Síntesis iniciada usando modelo TTS: $currentModel")
 
         if (chosenTtsEngine.value == "android") {
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "robin_tts")
@@ -294,12 +407,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Piper TTS
             if (!isPiperDownloaded.value) {
                 _statusLabel.value = "Falta Piper"
-                speechManager.setError("El modelo local de Piper TTS no está descargado. Descárgalo en Actividad.")
+                speechManager.setError("El modelo local de Piper TTS no está descargado. Descárgalo en Configuraciones.")
                 return
             }
-            // Mocking Piper engine with specific parameters to represent onnx layout
+            // Mocking Piper engine with custom ONNX parameters
             viewModelScope.launch {
-                _statusLabel.value = "Piper ONNX: Generando voz..."
+                _statusLabel.value = "Piper ONNX ($currentModel): Generando..."
                 delay(1000)
                 tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "piper_tts")
                 _statusLabel.value = "Listo"

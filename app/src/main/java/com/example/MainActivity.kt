@@ -19,6 +19,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -42,6 +43,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
@@ -77,7 +79,9 @@ class MainActivity : ComponentActivity() {
 fun RobinMainScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
     var currentTab by remember { mutableStateOf(0) } // 0: STT, 1: TTS, 2: History/Settings
+    var showSettings by remember { mutableStateOf(false) }
     
+    val uiLanguage by viewModel.uiLanguage.collectAsStateWithLifecycle()
     val statusLabel by viewModel.statusLabel.collectAsStateWithLifecycle()
     val isListening by viewModel.isListening.collectAsStateWithLifecycle()
     val liveTranscript by viewModel.liveTranscript.collectAsStateWithLifecycle()
@@ -100,6 +104,10 @@ fun RobinMainScreen(viewModel: MainViewModel) {
         }
     }
 
+    if (showSettings) {
+        SettingsDialog(viewModel = viewModel, onDismiss = { showSettings = false })
+    }
+
     Scaffold(
         bottomBar = {
             NavigationBar(
@@ -110,19 +118,19 @@ fun RobinMainScreen(viewModel: MainViewModel) {
                     selected = currentTab == 0,
                     onClick = { currentTab = 0 },
                     icon = { Icon(if (currentTab == 0) Icons.Filled.Mic else Icons.Outlined.Mic, contentDescription = "Transcripción") },
-                    label = { Text("STT (Voz)", style = TextStyleWithSafeSize()) }
+                    label = { Text(RobinTranslations.get("stt_tab", uiLanguage), style = TextStyleWithSafeSize()) }
                 )
                 NavigationBarItem(
                     selected = currentTab == 1,
                     onClick = { currentTab = 1 },
                     icon = { Icon(if (currentTab == 1) Icons.Filled.VolumeUp else Icons.Outlined.VolumeUp, contentDescription = "Síntesis") },
-                    label = { Text("TTS (Texto)", style = TextStyleWithSafeSize()) }
+                    label = { Text(RobinTranslations.get("tts_tab", uiLanguage), style = TextStyleWithSafeSize()) }
                 )
                 NavigationBarItem(
                     selected = currentTab == 2,
                     onClick = { currentTab = 2 },
-                    icon = { Icon(if (currentTab == 2) Icons.Filled.Settings else Icons.Outlined.Settings, contentDescription = "Historial") },
-                    label = { Text("Actividad", style = TextStyleWithSafeSize()) }
+                    icon = { Icon(if (currentTab == 2) Icons.Filled.History else Icons.Outlined.History, contentDescription = "Historial") },
+                    label = { Text(RobinTranslations.get("history_tab", uiLanguage), style = TextStyleWithSafeSize()) }
                 )
             }
         }
@@ -134,7 +142,11 @@ fun RobinMainScreen(viewModel: MainViewModel) {
                 .padding(horizontal = 16.dp)
         ) {
             // Elegant top branding Header
-            RobinHeaderSection(viewModel = viewModel, statusText = statusLabel)
+            RobinHeaderSection(
+                viewModel = viewModel, 
+                statusText = statusLabel,
+                onSettingsClick = { showSettings = true }
+            )
 
             AnimatedVisibility(
                 visible = progressBar != null,
@@ -189,7 +201,7 @@ fun RobinMainScreen(viewModel: MainViewModel) {
 }
 
 @Composable
-fun RobinHeaderSection(viewModel: MainViewModel, statusText: String) {
+fun RobinHeaderSection(viewModel: MainViewModel, statusText: String, onSettingsClick: () -> Unit) {
     val darkMode by viewModel.isDarkMode.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -258,14 +270,14 @@ fun RobinHeaderSection(viewModel: MainViewModel, statusText: String) {
             }
 
             IconButton(
-                onClick = { viewModel.isDarkMode.value = !darkMode },
+                onClick = onSettingsClick,
                 modifier = Modifier
                     .size(40.dp)
                     .background(MaterialTheme.colorScheme.surface, CircleShape)
             ) {
                 Icon(
-                    imageVector = if (darkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
-                    contentDescription = "Tema",
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Configuraciones",
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -348,6 +360,7 @@ fun SpeechToTextTab(
         }
 
         // 2. STT Engine configuration
+        val uiLanguage by viewModel.uiLanguage.collectAsStateWithLifecycle()
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -356,20 +369,23 @@ fun SpeechToTextTab(
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text(
-                    text = "Selección de Motor STT",
+                    text = RobinTranslations.get("choose_engine", uiLanguage),
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     val engines = listOf(
-                        "android_stt" to "Nativo",
-                        "vosk" to "Vosk",
-                        "whisper_cpp" to "Whisper",
-                        "gemini_cloud" to "Gemini"
+                        "android_stt" to (if (uiLanguage == "en") "Native" else "Nativo"),
+                        "vosk" to "Vosk STT",
+                        "whisper_cpp" to "Whisper CPP",
+                        "whisper_api" to "Whisper API",
+                        "gemini_cloud" to "Gemini Cloud"
                     )
                     engines.forEach { (key, label) ->
                         Button(
@@ -378,8 +394,7 @@ fun SpeechToTextTab(
                                 containerColor = if (currentEngine == key) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                                 contentColor = if (currentEngine == key) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                             ),
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 1.dp, vertical = 6.dp)
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(label, style = TextStyleWithSafeSize().copy(fontSize = 11.sp, fontWeight = FontWeight.Bold))
                         }
@@ -410,11 +425,11 @@ fun SpeechToTextTab(
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Falta modelo de $missingModelName",
+                                    text = RobinTranslations.get("warn_missing_model", uiLanguage) + " ($missingModelName)",
                                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
                                 )
                                 Text(
-                                    text = "Descarga el modelo local para usar este motor sin internet.",
+                                    text = RobinTranslations.get("warn_missing_desc", uiLanguage),
                                     style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f))
                                 )
                             }
@@ -424,7 +439,7 @@ fun SpeechToTextTab(
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
-                                Text("Descargar", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(RobinTranslations.get("btn_down", uiLanguage), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -437,7 +452,11 @@ fun SpeechToTextTab(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Idioma local:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = if (uiLanguage == "en") "Audio speech language:" else "Idioma local:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         val langs = listOf("es" to "ES", "en" to "EN", "pt" to "PT")
                         langs.forEach { (code, label) ->
@@ -701,6 +720,7 @@ fun TextToSpeechTab(viewModel: MainViewModel) {
     val speechRate by viewModel.currentTtsSpeechRate.collectAsStateWithLifecycle()
     val pitch by viewModel.currentTtsPitch.collectAsStateWithLifecycle()
     val isPiperDownloaded by viewModel.isPiperDownloaded.collectAsStateWithLifecycle()
+    val uiLanguage by viewModel.uiLanguage.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -708,12 +728,12 @@ fun TextToSpeechTab(viewModel: MainViewModel) {
             .verticalScrollAndCompactLayout()
     ) {
         Text(
-            text = "Síntesis de Voz (Text-to-Speech)",
+            text = RobinTranslations.get("title_tts", uiLanguage),
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
             color = MaterialTheme.colorScheme.onBackground
         )
         Text(
-            text = "Escribe texto plano para convertirlo en voz offline con alta calidad de entonación.",
+            text = RobinTranslations.get("desc_tts", uiLanguage),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -729,7 +749,7 @@ fun TextToSpeechTab(viewModel: MainViewModel) {
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Selección de Motor TTS",
+                    text = RobinTranslations.get("choose_tts_engine", uiLanguage),
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -783,11 +803,11 @@ fun TextToSpeechTab(viewModel: MainViewModel) {
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Falta modelo de Piper TTS",
+                            text = RobinTranslations.get("warn_missing_model", uiLanguage) + " (Piper)",
                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
                         )
                         Text(
-                            text = "Descarga el sintetizador local para generar audio offline.",
+                            text = RobinTranslations.get("warn_missing_desc", uiLanguage),
                             style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f))
                         )
                     }
@@ -797,7 +817,7 @@ fun TextToSpeechTab(viewModel: MainViewModel) {
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("Descargar", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text(RobinTranslations.get("btn_down", uiLanguage), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -812,7 +832,14 @@ fun TextToSpeechTab(viewModel: MainViewModel) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(130.dp),
-            placeholder = { Text("Escribe el texto aquí... Ej: Hola Robin, esto se procesa de manera segura y confidencial en mi dispositivo.") },
+            placeholder = { 
+                Text(
+                    text = if (uiLanguage == "en") 
+                        "Write custom text here... e.g., Hello Robin, this is synthesized locally and securely inside my device." 
+                    else 
+                        "Escribe el texto aquí... Ej: Hola Robin, esto se procesa de manera segura y confidencial en mi dispositivo."
+                ) 
+            },
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = MaterialTheme.colorScheme.surface,
@@ -831,7 +858,7 @@ fun TextToSpeechTab(viewModel: MainViewModel) {
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Ajustes de Prosodia y Tono",
+                    text = if (uiLanguage == "en") "Prosody & Pitch Controls" else "Ajustes de Prosodia y Tono",
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -842,7 +869,7 @@ fun TextToSpeechTab(viewModel: MainViewModel) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Velocidad de habla", fontSize = 13.sp)
+                        Text(RobinTranslations.get("speech_rate", uiLanguage), fontSize = 13.sp)
                         Text(text = "%.1fx".format(speechRate), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                     Slider(
@@ -861,7 +888,7 @@ fun TextToSpeechTab(viewModel: MainViewModel) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Tono / Entonación", fontSize = 13.sp)
+                        Text(RobinTranslations.get("pitch", uiLanguage), fontSize = 13.sp)
                         Text(text = "%.1fx".format(pitch), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                     Slider(
@@ -888,7 +915,7 @@ fun TextToSpeechTab(viewModel: MainViewModel) {
         ) {
             Icon(Icons.Filled.VolumeUp, contentDescription = "Hablar")
             Spacer(modifier = Modifier.width(8.dp))
-            Text("🔊 Generar Voz Offline", style = TextStyleWithSafeSize())
+            Text(RobinTranslations.get("speak_btn", uiLanguage), style = TextStyleWithSafeSize())
         }
     }
 }
@@ -899,6 +926,7 @@ fun ActivityAndSettingsTab(viewModel: MainViewModel) {
     val totalTrans by viewModel.totalTranscriptions.collectAsStateWithLifecycle()
     val totalSecs by viewModel.totalSecondsProcessed.collectAsStateWithLifecycle()
     val estimatedCost by viewModel.totalCloudCost.collectAsStateWithLifecycle()
+    val uiLanguage by viewModel.uiLanguage.collectAsStateWithLifecycle()
     
     var searchQuery by remember { mutableStateOf("") }
     val context = LocalContext.current
@@ -923,13 +951,13 @@ fun ActivityAndSettingsTab(viewModel: MainViewModel) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Tu Actividad Robin",
+                        text = RobinTranslations.get("history_title", uiLanguage),
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Métricas y registros guardados de manera segura en la base de datos local SQLite.",
+                        text = RobinTranslations.get("history_desc", uiLanguage),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -962,33 +990,28 @@ fun ActivityAndSettingsTab(viewModel: MainViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        Text("Transcr.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(RobinTranslations.get("stats_trans", uiLanguage), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("$totalTrans", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
                     }
                     Box(modifier = Modifier.width(1.dp).height(40.dp).background(MaterialTheme.colorScheme.surfaceVariant))
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        Text("Horas/Secs", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(RobinTranslations.get("stats_secs", uiLanguage), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("${totalSecs}s", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
                     }
                     Box(modifier = Modifier.width(1.dp).height(40.dp).background(MaterialTheme.colorScheme.surfaceVariant))
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        Text("Costo Cloud", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(RobinTranslations.get("stats_cost", uiLanguage), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("$%.4f".format(estimatedCost), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
         }
 
-        // On-demand speech models download config dashboard card
-        item {
-            SpeechModelsDownloadConfigCard(viewModel = viewModel)
-        }
-
         item {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Buscar en transcripciones...") },
+                placeholder = { Text(RobinTranslations.get("search_hist", uiLanguage)) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Buscar") },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
@@ -1012,7 +1035,7 @@ fun ActivityAndSettingsTab(viewModel: MainViewModel) {
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Historial vacío",
+                            text = RobinTranslations.get("empty_hist", uiLanguage),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1043,7 +1066,7 @@ fun ActivityAndSettingsTab(viewModel: MainViewModel) {
             ) {
                 Icon(Icons.Default.DeleteSweep, contentDescription = "Limpiar Todo")
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Limpiar Todo el Historial", style = TextStyleWithSafeSize())
+                Text(RobinTranslations.get("clear_all", uiLanguage), style = TextStyleWithSafeSize())
             }
         }
     }
@@ -1138,9 +1161,15 @@ fun TranscriptionItemRow(
     }
 }
 
-// Layout optimization helpers supporting adaptive heights smoothly
+// Elegant Dialog representing configurations panel with bilingual preferences
 @Composable
-fun SpeechModelsDownloadConfigCard(viewModel: MainViewModel) {
+fun SettingsDialog(viewModel: MainViewModel, onDismiss: () -> Unit) {
+    val uiLanguage by viewModel.uiLanguage.collectAsStateWithLifecycle()
+    val darkModeState by viewModel.isDarkMode.collectAsStateWithLifecycle()
+    val whisperApiKey by viewModel.whisperApiKey.collectAsStateWithLifecycle()
+    val whisperApiEndpoint by viewModel.whisperApiEndpoint.collectAsStateWithLifecycle()
+    val ttsModelName by viewModel.ttsModelName.collectAsStateWithLifecycle()
+
     val isVoskDownloaded by viewModel.isVoskDownloaded.collectAsStateWithLifecycle()
     val isWhisperDownloaded by viewModel.isWhisperDownloaded.collectAsStateWithLifecycle()
     val isPiperDownloaded by viewModel.isPiperDownloaded.collectAsStateWithLifecycle()
@@ -1148,131 +1177,379 @@ fun SpeechModelsDownloadConfigCard(viewModel: MainViewModel) {
     val progressMap by ModelDownloadManager.downloadProgressMap.collectAsStateWithLifecycle()
     val statusMap by ModelDownloadManager.downloadStatusMap.collectAsStateWithLifecycle()
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(2.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Modelos Offline On-Demand",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "Descarga o elimina los modelos para ajustar el almacenamiento de tu dispositivo.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp))
-
-            ModelDownloadManager.models.forEachIndexed { index, model ->
-                val isDownloaded = when (model.id) {
-                    "vosk" -> isVoskDownloaded
-                    "whisper" -> isWhisperDownloaded
-                    "piper" -> isPiperDownloaded
-                    else -> false
-                }
-                val progress = progressMap[model.id]
-                val customStatus = statusMap[model.id]
-
-                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.88f),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp)
+            ) {
+                // Header Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Configuraciones",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = RobinTranslations.get("settings_title", uiLanguage),
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Cerrar")
+                    }
+                }
+
+                Text(
+                    text = RobinTranslations.get("settings_sub", uiLanguage),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+                // Scrollable configs column
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = if (uiLanguage == "en") "Appearance & Locale" else "Apariencia e Idioma",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    )
+
+                    // Theme selector row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                            .padding(12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(if (darkModeState) Icons.Default.DarkMode else Icons.Default.LightMode, contentDescription = "Tema")
                             Text(
-                                text = model.name,
+                                text = RobinTranslations.get("theme_label", uiLanguage),
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
                             )
+                        }
+                        Switch(
+                            checked = darkModeState,
+                            onCheckedChange = { viewModel.toggleDarkMode() }
+                        )
+                    }
+
+                    // Language toggler
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(Icons.Default.Language, contentDescription = "Idioma")
                             Text(
-                                text = "${model.size} • ${model.description}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = RobinTranslations.get("lang_label", uiLanguage),
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        if (progress != null) {
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = "Descargando...",
-                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                )
-                                Text(
-                                    text = "${(progress * 100).toInt()}%",
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                            }
-                        } else {
-                            if (isDownloaded) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            listOf("es" to "Español", "en" to "English").forEach { (code, name) ->
                                 Button(
-                                    onClick = { viewModel.deleteModel(model.id) },
+                                    onClick = { viewModel.setUiLanguage(code) },
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                        containerColor = if (uiLanguage == code) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                        contentColor = if (uiLanguage == code) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                                     ),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
-                                    Text("Borrar", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                            } else {
-                                Button(
-                                    onClick = { viewModel.downloadModel(model.id) },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("Descargar", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text(name, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
                     }
 
-                    if (progress != null) {
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 6.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+                    Text(
+                        text = RobinTranslations.get("whisper_config", uiLanguage),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    )
+
+                    OutlinedTextField(
+                        value = whisperApiKey,
+                        onValueChange = { viewModel.setWhisperApiKey(it) },
+                        label = { Text("Whisper API Key") },
+                        placeholder = { Text(RobinTranslations.get("whisper_key_placeholder", uiLanguage)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = whisperApiEndpoint,
+                        onValueChange = { viewModel.setWhisperApiEndpoint(it) },
+                        label = { Text("Whisper Endpoint URL") },
+                        placeholder = { Text(RobinTranslations.get("whisper_endpoint_placeholder", uiLanguage)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = ttsModelName,
+                        onValueChange = { viewModel.setTtsModelName(it) },
+                        label = { Text("TTS Model Name Config") },
+                        placeholder = { Text(RobinTranslations.get("tts_model_placeholder", uiLanguage)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+                    // STT Category Section
+                    Text(
+                        text = if (uiLanguage == "en") "Offline STT Models (Speech-to-Text)" else "Modelos STT Offline (Voz a Texto)",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    )
+
+                    val overlayModels = listOf(
+                        Triple("vosk", "STT", Triple("Vosk STT Mini", "es-0.22 • 42 MB", isVoskDownloaded)),
+                        Triple("whisper", "STT", Triple("Whisper GGML-Tiny", "es • 75 MB", isWhisperDownloaded)),
+                        Triple("piper", "TTS", Triple("Piper TTS Neural", "es_ES • 48 MB", isPiperDownloaded))
+                    )
+
+                    overlayModels.filter { it.second == "STT" }.forEach { (id, _, details) ->
+                        val (name, desc, state) = details
+                        ModelDownloadRow(
+                            id = id,
+                            name = name,
+                            description = desc,
+                            isDownloaded = state,
+                            progress = progressMap[id],
+                            customStatus = statusMap[id],
+                            viewModel = viewModel,
+                            uiLanguage = uiLanguage
                         )
                     }
 
-                    if (customStatus != null || isDownloaded) {
-                        Text(
-                            text = customStatus ?: "Instalado offline",
-                            fontSize = 11.sp,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                            color = if (isDownloaded) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    } else {
-                        Text(
-                            text = "No descargado",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.padding(top = 4.dp)
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // TTS Category Section
+                    Text(
+                        text = if (uiLanguage == "en") "Offline TTS Models (Text-to-Speech)" else "Modelos TTS Offline (Texto a Voz)",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    )
+
+                    overlayModels.filter { it.second == "TTS" }.forEach { (id, _, details) ->
+                        val (name, desc, state) = details
+                        ModelDownloadRow(
+                            id = id,
+                            name = name,
+                            description = desc,
+                            isDownloaded = state,
+                            progress = progressMap[id],
+                            customStatus = statusMap[id],
+                            viewModel = viewModel,
+                            uiLanguage = uiLanguage
                         )
                     }
 
-                    if (index < ModelDownloadManager.models.size - 1) {
-                        HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(if (uiLanguage == "en") "Save & Apply" else "Guardar y Aplicar", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ModelDownloadRow(
+    id: String,
+    name: String,
+    description: String,
+    isDownloaded: Boolean,
+    progress: Float?,
+    customStatus: String?,
+    viewModel: MainViewModel,
+    uiLanguage: String
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+            .padding(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            if (progress != null) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = if (uiLanguage == "en") "Downloading..." else "Descargando...",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    )
+                    Text(
+                        text = "${(progress * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            } else {
+                if (isDownloaded) {
+                    Button(
+                        onClick = { viewModel.deleteModel(id) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(RobinTranslations.get("btn_del", uiLanguage), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Button(
+                        onClick = { viewModel.downloadModel(id) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(RobinTranslations.get("btn_down", uiLanguage), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
+
+        if (progress != null) {
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        }
+
+        if (customStatus != null || isDownloaded) {
+            Text(
+                text = customStatus ?: (if (uiLanguage == "en") "Installed offline" else "Instalado offline"),
+                fontSize = 11.sp,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                color = if (isDownloaded) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        } else {
+            Text(
+                text = if (uiLanguage == "en") "Not downloaded" else "No descargado",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
+}
+
+// Bilingüal localization translations mapping
+object RobinTranslations {
+    fun get(key: String, lang: String): String {
+        val strings = mapOf(
+            "app_subtitle" to Pair("Robin Smart Assistant for voice text processing", "Asistente Inteligente Robin para procesamiento de voz y texto"),
+            "stt_tab" to Pair("STT (Voice)", "STT (Voz)"),
+            "tts_tab" to Pair("TTS (Text)", "TTS (Texto)"),
+            "history_tab" to Pair("History", "Historial"),
+            "title_stt" to Pair("Local STT Voice Processor", "Procesador de Voz STT Local"),
+            "desc_stt" to Pair("Speak and let Robin transcribe offline or via custom API configurations.", "Habla y deja que Robin transcriba en modo offline o mediante APIs configuradas."),
+            "choose_engine" to Pair("Select Voice Engine", "Selección de Motor de Voz"),
+            "title_tts" to Pair("Text-to-Speech Synthesis", "Síntesis de Voz (Text-to-Speech)"),
+            "desc_tts" to Pair("Write plain text to convert it into high-fidelity offline voice.", "Escribe texto plano para convertirlo en voz offline con alta calidad de entonación."),
+            "choose_tts_engine" to Pair("Select TTS Engine", "Selección de Motor TTS"),
+            "speech_rate" to Pair("Speed Rate", "Velocidad de Voz"),
+            "pitch" to Pair("Vocal Pitch", "Tono de Voz"),
+            "speak_btn" to Pair("Synthesize Speech", "Sintetizar Voz"),
+            "history_title" to Pair("Processing History", "Historial de Procesamientos"),
+            "history_desc" to Pair("Your audio recordings and processing logs are securely saved on local SQLite disk storage.", "Registros guardados de manera segura en la base de datos local SQLite del dispositivo."),
+            "search_hist" to Pair("Search in history...", "Buscar en transcripciones..."),
+            "empty_hist" to Pair("History is empty", "Historial vacío"),
+            "clear_all" to Pair("Clear All History", "Limpiar Todo el Historial"),
+            "stats_trans" to Pair("Transcriptions", "Transcr."),
+            "stats_secs" to Pair("Total Seconds", "Horas/Secs"),
+            "stats_cost" to Pair("Cloud Cost Estim.", "Costo Cloud"),
+            "models_title" to Pair("On-Demand Offline Models", "Modelos Offline On-Demand"),
+            "models_desc" to Pair("Download or delete voice models to optimize your local device storage limit.", "Descarga o elimina los modelos para ajustar el almacenamiento de tu dispositivo."),
+            "settings_title" to Pair("Robin AI Preferences", "Configuraciones Robin AI"),
+            "settings_sub" to Pair("Manage theme, locale language, and network service parameters dynamically.", "Gestión de interfaz, idioma local y parámetros de red en tiempo real."),
+            "theme_label" to Pair("Dark Aesthetic Theme", "Tema Estético Oscuro"),
+            "lang_label" to Pair("Interface Language", "Language / Idioma"),
+            "btn_down" to Pair("Download", "Descargar"),
+            "btn_del" to Pair("Delete", "Borrar"),
+            "warn_missing_model" to Pair("Missing Speech Model", "Falta modelo de procesamiento"),
+            "warn_missing_desc" to Pair("Download the local model to utilize this offline selection without internet.", "Descarga el modelo local para usar este motor sin internet."),
+            "whisper_config" to Pair("Whisper API & Endpoint Customization", "Personalización de OpenAI Whisper API"),
+            "whisper_key_placeholder" to Pair("Enter custom Whisper API Key...", "Introduce la clave API de Whisper..."),
+            "whisper_endpoint_placeholder" to Pair("Enter custom endpoint URL...", "Introduce la URL del endpoint de Whisper..."),
+            "tts_model_placeholder" to Pair("Enter TTS Model Name...", "Introduce el nombre del modelo TTS...")
+        )
+        val value = strings[key] ?: return key
+        return if (lang == "en") value.first else value.second
     }
 }
 

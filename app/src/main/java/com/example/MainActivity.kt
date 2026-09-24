@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun RobinMainScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
-    var currentTab by remember { mutableStateOf(0) } // 0: STT, 1: TTS, 2: History/Settings
+    var currentTab by remember { mutableStateOf(0) } // 0: STT, 1: TTS, 2: System Dictation, 3: History/Settings
     var showSettings by remember { mutableStateOf(false) }
     
     val uiLanguage by viewModel.uiLanguage.collectAsStateWithLifecycle()
@@ -132,7 +132,13 @@ fun RobinMainScreen(viewModel: MainViewModel) {
                 NavigationBarItem(
                     selected = currentTab == 2,
                     onClick = { currentTab = 2 },
-                    icon = { Icon(if (currentTab == 2) Icons.Filled.History else Icons.Outlined.History, contentDescription = "Historial") },
+                    icon = { Icon(if (currentTab == 2) Icons.Filled.Widgets else Icons.Outlined.Widgets, contentDescription = "Acceso SO") },
+                    label = { Text(RobinTranslations.get("quick_access_tab", uiLanguage), style = TextStyleWithSafeSize()) }
+                )
+                NavigationBarItem(
+                    selected = currentTab == 3,
+                    onClick = { currentTab = 3 },
+                    icon = { Icon(if (currentTab == 3) Icons.Filled.History else Icons.Outlined.History, contentDescription = "Historial") },
                     label = { Text(RobinTranslations.get("history_tab", uiLanguage), style = TextStyleWithSafeSize()) }
                 )
             }
@@ -197,7 +203,8 @@ fun RobinMainScreen(viewModel: MainViewModel) {
                     }
                 )
                 1 -> TextToSpeechTab(viewModel = viewModel)
-                2 -> ActivityAndSettingsTab(viewModel = viewModel)
+                2 -> com.example.ui.components.QuickAccessSystemScreen(uiLanguage = uiLanguage)
+                3 -> ActivityAndSettingsTab(viewModel = viewModel)
             }
         }
     }
@@ -1190,6 +1197,7 @@ fun TranscriptionItemRow(
 // Elegant Dialog representing configurations panel with bilingual preferences
 @Composable
 fun SettingsDialog(viewModel: MainViewModel, onDismiss: () -> Unit) {
+    val context = LocalContext.current
     val uiLanguage by viewModel.uiLanguage.collectAsStateWithLifecycle()
     val darkModeState by viewModel.isDarkMode.collectAsStateWithLifecycle()
     val whisperApiKey by viewModel.whisperApiKey.collectAsStateWithLifecycle()
@@ -1320,6 +1328,66 @@ fun SettingsDialog(viewModel: MainViewModel, onDismiss: () -> Unit) {
                                     Text(name, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+                    Text(
+                        text = if (uiLanguage == "en") "OS-Wide Voice Integration" else "Integración de Dictado en el Sistema",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    val intent = Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {}
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(if (uiLanguage == "en") "Keyboards" else "Teclados", fontSize = 11.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    val intent = Intent(
+                                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${context.packageName}")
+                                    ).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {}
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(if (uiLanguage == "en") "Overlay" else "Burbuja", fontSize = 11.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {}
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(if (uiLanguage == "en") "Accessib." else "Accesib.", fontSize = 11.sp)
                         }
                     }
 
@@ -1541,6 +1609,7 @@ object RobinTranslations {
             "app_subtitle" to Pair("Robin Smart Assistant for voice text processing", "Asistente Inteligente Robin para procesamiento de voz y texto"),
             "stt_tab" to Pair("STT (Voice)", "STT (Voz)"),
             "tts_tab" to Pair("TTS (Text)", "TTS (Texto)"),
+            "quick_access_tab" to Pair("OS Dictation", "Acceso SO"),
             "history_tab" to Pair("History", "Historial"),
             "title_stt" to Pair("Local STT Voice Processor", "Procesador de Voz STT Local"),
             "desc_stt" to Pair("Speak and let Robin transcribe offline or via custom API configurations.", "Habla y deja que Robin transcriba en modo offline o mediante APIs configuradas."),
